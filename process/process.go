@@ -22,7 +22,6 @@ func getProcessName(id uint32) string {
 		return "<UNKNOWN>"
 	}
 
-	// serviceName := w32.UTF16PtrToString(&me.SzModule[0])
 	serviceName := windows.UTF16PtrToString(&me.Module[0])
 	return strings.ToLower(serviceName)
 
@@ -46,5 +45,5 @@ func FindByName(name string) (uint32, error) {
 			return pid, nil
 		}
 	}
-	return 0, fmt.Errorf("Process given not found")
+	return 0, fmt.Errorf("process given not found")
 }
