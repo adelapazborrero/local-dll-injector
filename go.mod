@@ -1,4 +1,4 @@
-module github.com/adelapazborrero/injector
+module github.com/adelapazborrero/local-dll-injector
 
 go 1.23.2
 

@@ -7,7 +7,7 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/adelapazborrero/injector/process"
+	"github.com/adelapazborrero/local-dll-injector/process"
 	"golang.org/x/sys/windows"
 )
 
@@ -35,10 +35,13 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+
 	dPath := *dllPath
 	pId := uintptr(procID)
 
 	kernel32 := windows.NewLazyDLL("kernel32.dll")
+	VirtualAllocEx := kernel32.NewProc("VirtualAllocEx")
+	CreateRemoteThread := kernel32.NewProc("CreateRemoteThread")
 
 	processHandle, err := windows.OpenProcess(
 		windows.PROCESS_CREATE_THREAD|
@@ -54,7 +57,6 @@ func main() {
 	}
 	fmt.Println("Process opened")
 
-	VirtualAllocEx := kernel32.NewProc("VirtualAllocEx")
 	allocatedMemory, _, err := VirtualAllocEx.Call(uintptr(processHandle), 0, uintptr(len(dPath)+1), windows.MEM_RESERVE|windows.MEM_COMMIT, windows.PAGE_EXECUTE_READWRITE)
 	if err != nil {
 		fmt.Printf("failed to allocate memory: %s\n", err.Error())
@@ -78,7 +80,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	tHandle, _, _ := kernel32.NewProc("CreateRemoteThread").Call(uintptr(processHandle), 0, 0, LoadLibAddr, allocatedMemory, 0, 0)
+	tHandle, _, _ := CreateRemoteThread.Call(uintptr(processHandle), 0, 0, LoadLibAddr, allocatedMemory, 0, 0)
 	defer syscall.CloseHandle(syscall.Handle(tHandle))
 	fmt.Println("DLL Injected")
 
