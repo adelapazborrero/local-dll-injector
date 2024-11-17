@@ -57,7 +57,14 @@ func main() {
 	}
 	fmt.Println("Process opened")
 
-	allocatedMemory, _, err := VirtualAllocEx.Call(uintptr(processHandle), 0, uintptr(len(dPath)+1), windows.MEM_RESERVE|windows.MEM_COMMIT, windows.PAGE_EXECUTE_READWRITE)
+	allocatedMemory, _, err := VirtualAllocEx.Call(
+		uintptr(processHandle),
+		0,
+		uintptr(len(dPath)+1),
+		windows.MEM_RESERVE|
+			windows.MEM_COMMIT,
+		windows.PAGE_EXECUTE_READWRITE,
+	)
 	if err != nil {
 		fmt.Printf("failed to allocate memory: %s\n", err.Error())
 	}
@@ -69,7 +76,13 @@ func main() {
 	}
 
 	Zero := uintptr(0)
-	err = windows.WriteProcessMemory(processHandle, allocatedMemory, bPtrDpath, uintptr(len(dPath)+1), &Zero)
+	err = windows.WriteProcessMemory(
+		processHandle,
+		allocatedMemory,
+		bPtrDpath,
+		uintptr(len(dPath)+1),
+		&Zero,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -80,7 +93,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	tHandle, _, _ := CreateRemoteThread.Call(uintptr(processHandle), 0, 0, LoadLibAddr, allocatedMemory, 0, 0)
+	tHandle, _, _ := CreateRemoteThread.Call(
+		uintptr(processHandle),
+		0,
+		0,
+		LoadLibAddr,
+		allocatedMemory,
+		0,
+		0,
+	)
 	defer syscall.CloseHandle(syscall.Handle(tHandle))
 	fmt.Println("DLL Injected")
 
