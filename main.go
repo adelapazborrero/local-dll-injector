@@ -3,68 +3,87 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"syscall"
 
-	"github.com/JamesHovious/w32"
 	process "github.com/adelapazborrero/injector/process_finder"
+	"golang.org/x/sys/windows"
 )
 
 func main() {
-	processName := flag.String("p", "", "Process name that will be use to inject the dell")
-	dllPath := flag.String("d", "", "Dll to inject into the process")
+	processName := flag.String("p", "", "Process name to inject the DLL")
+	dllPath := flag.String("d", "", "DLL to inject into the process")
 
 	flag.Parse()
 
 	if *processName == "" || *dllPath == "" {
-		fmt.Println("Process name and Dll path are required")
+		fmt.Println("Process name and DLL path are required")
 		fmt.Println("Example: injector.exe -p \"explorer.exe\" -d \"mydll.dll\"")
 		return
 	}
 
-	if _, err := os.Stat(*dllPath); err != nil {
-		fmt.Println("Path of given dll does not exist")
+	_, err := os.Stat(*dllPath)
+	if err != nil {
+		fmt.Println("Path of given DLL does not exist")
 		return
 	}
 
-	// Get the process id
+	// Get the process ID
 	procID, err := process.FindByName(*processName)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+	dPath := *dllPath
+	pId := uintptr(procID)
 
-	// Open the found process
-	hProc, handleErr := w32.OpenProcess(w32.PROCESS_ALL_ACCESS, false, uint32(procID))
-	if handleErr != nil {
-		fmt.Println("handleErr:", handleErr)
-	}
+	kernel32 := windows.NewLazyDLL("kernel32.dll")
 
-	// Load kernel32
-	kernel32DLL, dllLoadErr := syscall.LoadLibrary("kernel32.dll")
-	if dllLoadErr != nil {
-		fmt.Println("dllLoadErr:", dllLoadErr)
+	//Opens a handle to the target process with the needed permissions
+	pHandle, err := windows.OpenProcess(windows.PROCESS_CREATE_THREAD|windows.PROCESS_VM_OPERATION|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_READ|windows.PROCESS_QUERY_INFORMATION, false, uint32(pId))
+	if err != nil {
+		log.Fatal(err)
 	}
-	addr, addrErr := syscall.GetProcAddress(syscall.Handle(kernel32DLL), "LoadLibraryA")
-	if addrErr != nil {
-		fmt.Println("addrErr:", addrErr)
-	}
+	fmt.Println("Process opened")
+	////
 
-	// Allocate memory into the found process
-	arg, allocErr := w32.VirtualAllocEx(hProc, 0, len(*dllPath)*2, w32.MEM_RESERVE|w32.MEM_COMMIT, w32.PAGE_READWRITE)
-	if allocErr != nil {
-		fmt.Println("allocErr:", allocErr)
+	//Allocates virtual memory for the file path
+	VirtualAllocEx := kernel32.NewProc("VirtualAllocEx")
+	vAlloc, _, err := VirtualAllocEx.Call(uintptr(pHandle), 0, uintptr(len(dPath)+1), windows.MEM_RESERVE|windows.MEM_COMMIT, windows.PAGE_EXECUTE_READWRITE)
+	if err != nil {
+		fmt.Println("Failed to allocate memory: %s", err.Error())
 	}
+	fmt.Println("Memory allocated")
+	////
 
-	// Write the dll into the allocated memory
-	writeErr := w32.WriteProcessMemory(hProc, uint32(arg), []byte(*dllPath), 0)
-	if writeErr != nil {
-		fmt.Println("writeErr:", writeErr)
+	//Converts the file path to type *byte
+	bPtrDpath, err := windows.BytePtrFromString(dPath)
+	if err != nil {
+		log.Fatal(err)
 	}
+	////
 
-	// create thread out of the injected DLL to run it
-	_, _, threadErr := w32.CreateRemoteThread(hProc, nil, 0, uint32(addr), arg, 0)
-	if threadErr != nil {
-		fmt.Println("threadErr:", threadErr)
+	//Writes the filename to the previously allocated space
+	Zero := uintptr(0)
+	err = windows.WriteProcessMemory(pHandle, vAlloc, bPtrDpath, uintptr(len(dPath)+1), &Zero)
+	if err != nil {
+		log.Fatal(err)
 	}
+	fmt.Println("DLL path written")
+	////
+
+	//Gets a pointer to the LoadLibrary function
+	LoadLibAddr, err := syscall.GetProcAddress(syscall.Handle(kernel32.Handle()), "LoadLibraryA")
+	if err != nil {
+		log.Fatal(err)
+	}
+	////
+
+	//Creates a remote thread that loads the DLL triggering it
+	tHandle, _, _ := kernel32.NewProc("CreateRemoteThread").Call(uintptr(pHandle), 0, 0, LoadLibAddr, vAlloc, 0, 0)
+	defer syscall.CloseHandle(syscall.Handle(tHandle))
+	fmt.Println("DLL Injected")
+	////
+
 }
